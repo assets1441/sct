@@ -7,9 +7,9 @@ local HttpService = game:GetService("HttpService") -- Для JSON
 
 --// BUG FARM STATE & CONFIG //--
 local BugFarm = {
-    Enabled = false,
-    Running = false,
-    Paused = false, -- НОВОЕ: Переменная для состояния паузы
+    Enabled = false, -- Устанавливается через меню, не запускает цикл
+    Running = false, -- Устанавливается при запуске цикла
+    Paused = false,  -- Устанавливается при паузе цикла
     Blacklist = {
         "coconutcrab", "commandochick", "kingbeetle", "stumpsnail",
         "tunnelbear", "cavemonster", "aphid", "vicious", "mondochick", "cavemonster1"
@@ -22,7 +22,7 @@ local BugFarm = {
     CooldownMultiplier = 1.0,
     AutoLoot = true,
     CheckInterval = 5,
-    ShowNotifications = true,
+    -- ShowNotifications = true, -- Убрана настройка уведомлений
     PineTreeApproachDistance = 20 -- Используется для слайдера
 }
 
@@ -428,45 +428,45 @@ local function BugFarmMainLoop()
     end
 end
 
-function StartBugFarm()
+function StartBugFarm() -- Вспомогательная функция, не используется напрямую через F1
     if BugFarm.Running then return end
     BugFarmThread = coroutine.create(BugFarmMainLoop)
     coroutine.resume(BugFarmThread)
 end
 
-function StopBugFarm() -- Переименовал в ForceStop для ясности
+function StopBugFarm() -- ForceStop
     BugFarm.Paused = false -- Снимаем паузу при остановке
     BugFarm.Running = false
     BugFarm.Enabled = false
     -- ShowNotification("Bug Farm Force Stopped", 2) -- Notification logic moved to menu
 end
 
-function PauseBugFarm() -- НОВАЯ функция
+function PauseBugFarm()
     if BugFarm.Running and not BugFarm.Paused then
         BugFarm.Paused = true
         -- ShowNotification("Bug Farm Paused", 2) -- Notification logic moved to menu
     end
 end
 
-function ResumeBugFarm() -- НОВАЯ функция
+function ResumeBugFarm()
     if BugFarm.Running and BugFarm.Paused then
         BugFarm.Paused = false
         -- ShowNotification("Bug Farm Resumed", 2) -- Notification logic moved to menu
     end
 end
 
-function ForceStartBugFarm()
-    BugFarm.Enabled = true
-    BugFarm.Paused = false -- Убедиться, что не на паузе
-    StartBugFarm()
+function ForceStartBugFarm() -- F1 запускает через эту функцию, если Enabled = true
+    if BugFarm.Enabled and not BugFarm.Running then
+        StartBugFarm()
+    end
 end
 
 --// API CREATION //--
 _G.BugFarmAPI = {
     Start = StartBugFarm,
-    Stop = StopBugFarm, -- Теперь это ForceStop
-    Pause = PauseBugFarm, -- НОВОЕ
-    Resume = ResumeBugFarm, -- НОВОЕ
+    Stop = StopBugFarm,
+    Pause = PauseBugFarm,
+    Resume = ResumeBugFarm,
     ForceStart = ForceStartBugFarm,
     -- For updating settings from menu
     SetConfig = function(newSettings)

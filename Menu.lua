@@ -1,4 +1,4 @@
--- BugFarmMenu.lua
+-- BugFarmMenu.lua (Обновленный)
 --// SERVICES //--
 local UserInputService = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
@@ -79,11 +79,9 @@ local function GetCachedColor(r, g, b)
     end
     return ColorCache[key]
 end
-
 local function RGBtoHex(r, g, b)
     return string.format("#%02X%02X%02X", r, g, b)
 end
-
 local function HexToRGB(hex)
     if type(hex) ~= "string" then return nil end
     hex = hex:gsub("[^%x]", "")
@@ -160,7 +158,6 @@ local function ShowNotification(text, duration)
     -- Use the setting from the core API
     local settings = _G.BugFarmAPI.GetConfig()
     if settings.ShowNotifications == false then return end
-
     local notif = Instance.new("Frame")
     notif.Size = UDim2.new(1, 0, 0, 0)
     notif.BackgroundColor3 = State.CurrentTheme.Main
@@ -340,15 +337,28 @@ local MenuData = {
         Name = "Bug Farm",
         Items = {
             {Type = "Button", Name = "Enabled", State = false, Callback = function(state)
-                _G.BugFarmAPI.SetConfig({Enabled = state}) -- Use API to set state
                 if state then
-                    _G.BugFarmAPI.Start() -- Use API to start
+                    _G.BugFarmAPI.ForceStart() -- Use API to start/enable
                     ShowNotification("Bug Farm: ON", 1.5)
                 else
-                    _G.BugFarmAPI.Stop() -- Use API to stop
+                    _G.BugFarmAPI.Stop() -- Use API to stop/disable
                     ShowNotification("Bug Farm: OFF", 1.5)
                 end
             end},
+            -- NEW: Pause Button
+            {Type = "Button", Name = "Paused", State = false, Callback = function(state)
+                 if state then
+                     _G.BugFarmAPI.Pause() -- Use API to pause
+                     ShowNotification("Bug Farm: Paused", 1.5)
+                 else
+                     _G.BugFarmAPI.Resume() -- Use API to resume
+                     ShowNotification("Bug Farm: Resumed", 1.5)
+                 end
+             end},
+             -- NEW: Pine Tree Distance Slider
+             {Type = "Slider", Name = "Pine Tree Distance", Value = 20, Max = 50, Min = 5, Callback = function(value)
+                 _G.BugFarmAPI.SetConfig({PineTreeApproachDistance = value}) -- Use API to update
+             end},
             {Type = "Slider", Name = "Scan Radius", Value = 80, Max = 200, Callback = function(value)
                 _G.BugFarmAPI.SetConfig({MobScanRadius = value}) -- Use API to update
             end},
@@ -431,6 +441,9 @@ end
 local function UnloadMenu()
     ContextActionService:UnbindAction("MenuSink")
     ContextActionService:UnbindAction("MenuToggle")
+    ContextActionService:UnbindAction("BugFarmF1") -- Unbind F1
+    ContextActionService:UnbindAction("BugFarmF2") -- Unbind F2
+    ContextActionService:UnbindAction("BugFarmF3") -- Unbind F3
     for _, connection in pairs(Connections) do
         if connection then connection:Disconnect() end
     end
@@ -525,6 +538,28 @@ local function LoadConfig(name)
         -- Update the blacklist box text if core was loaded
         if BlacklistBox then
             BlacklistBox.Text = table.concat(_G.BugFarmAPI.Blacklist, "\n")
+        end
+        -- Update Pause button state based on loaded config
+        local pauseItem = nil
+        for _, item in ipairs(MenuData[1].Items) do
+            if item.Name == "Paused" and item.Type == "Button" then
+                pauseItem = item
+                break
+            end
+        end
+        if pauseItem then
+            pauseItem.State = data.BugFarm.Paused or false
+        end
+        -- Update Pine Tree Distance slider state based on loaded config
+        local distanceItem = nil
+        for _, item in ipairs(MenuData[1].Items) do
+            if item.Name == "Pine Tree Distance" and item.Type == "Slider" then
+                distanceItem = item
+                break
+            end
+        end
+        if distanceItem then
+            distanceItem.Value = data.BugFarm.PineTreeApproachDistance or 20
         end
     end
     if data.Elements then
@@ -776,7 +811,14 @@ local function UpdateVisuals()
         elseif item.Type == "File" then
             text = "FILE: " .. (item.Name or "")
         elseif item.Type == "Button" then
-            text = (item.State and "[x] " or "[ ] ") .. (item.Name or "")
+            -- Special handling for "Paused" button to reflect actual API state
+            if item.Name == "Paused" and item.Type == "Button" then
+                local apiState = _G.BugFarmAPI.GetConfig().Paused
+                item.State = apiState -- Sync item state with API
+                text = (apiState and "[x] " or "[ ] ") .. (item.Name or "")
+            else
+                text = (item.State and "[x] " or "[ ] ") .. (item.Name or "")
+            end
         elseif item.Type == "Action" then
             text = "[RUN] " .. (item.Name or "")
         elseif item.Type == "ColorPicker" then
@@ -1043,6 +1085,89 @@ for _ in ipairs(MenuData) do
     table.insert(Labels.Tabs, CreateLabel(TabScroll))
 end
 
+--// KEYBIND HANDLING (NEW) //--
+local function OnF1Activated(actionName, inputState, inputObject)
+    if inputState == Enum.UserInputState.Begin then
+        local currentConfig = _G.BugFarmAPI.GetConfig()
+        if currentConfig.Running then
+            _G.BugFarmAPI.Resume() -- F1 resumes if paused
+            ShowNotification("Bug Farm: Resumed via F1", 1.5)
+            -- Update the "Paused" button state in the menu
+            for _, item in ipairs(MenuData[1].Items) do
+                if item.Name == "Paused" and item.Type == "Button" then
+                    item.State = false
+                    break
+                end
+            end
+            UpdateVisuals()
+        else
+            _G.BugFarmAPI.ForceStart() -- F1 starts if stopped
+            ShowNotification("Bug Farm: Started via F1", 1.5)
+            -- Update the "Enabled" button state in the menu
+            for _, item in ipairs(MenuData[1].Items) do
+                if item.Name == "Enabled" and item.Type == "Button" then
+                    item.State = true
+                    break
+                end
+            end
+            UpdateVisuals()
+        end
+    end
+end
+
+local function OnF2Activated(actionName, inputState, inputObject)
+    if inputState == Enum.UserInputState.Begin then
+        local currentConfig = _G.BugFarmAPI.GetConfig()
+        if currentConfig.Running and not currentConfig.Paused then
+            _G.BugFarmAPI.Pause() -- F2 pauses if running and not paused
+            ShowNotification("Bug Farm: Paused via F2", 1.5)
+            -- Update the "Paused" button state in the menu
+            for _, item in ipairs(MenuData[1].Items) do
+                if item.Name == "Paused" and item.Type == "Button" then
+                    item.State = true
+                    break
+                end
+            end
+        elseif currentConfig.Running and currentConfig.Paused then
+            _G.BugFarmAPI.Resume() -- F2 resumes if paused
+            ShowNotification("Bug Farm: Resumed via F2", 1.5)
+            -- Update the "Paused" button state in the menu
+            for _, item in ipairs(MenuData[1].Items) do
+                if item.Name == "Paused" and item.Type == "Button" then
+                    item.State = false
+                    break
+                end
+            end
+        else
+            -- If not running, F2 does nothing specific, but could be used to start if desired
+            -- For consistency with your request, let's just notify if not running.
+            ShowNotification("Bug Farm: Not running", 1.5)
+        end
+        UpdateVisuals()
+    end
+end
+
+local function OnF3Activated(actionName, inputState, inputObject)
+    if inputState == Enum.UserInputState.Begin then
+        _G.BugFarmAPI.Stop() -- F3 forces stop
+        ShowNotification("Bug Farm: Stopped via F3", 1.5)
+        -- Update the "Enabled" and "Paused" button states in the menu
+        for _, item in ipairs(MenuData[1].Items) do
+            if item.Name == "Enabled" and item.Type == "Button" then
+                item.State = false
+            elseif item.Name == "Paused" and item.Type == "Button" then
+                item.State = false
+            end
+        end
+        UpdateVisuals()
+    end
+end
+
+-- Bind keys
+ContextActionService:BindAction("BugFarmF1", OnF1Activated, false, Enum.KeyCode.F1)
+ContextActionService:BindAction("BugFarmF2", OnF2Activated, false, Enum.KeyCode.F2)
+ContextActionService:BindAction("BugFarmF3", OnF3Activated, false, Enum.KeyCode.F3)
+
 --// INPUT HANDLING //--
 local function ToggleFade(visible)
     local t = visible and 0 or 1
@@ -1052,7 +1177,6 @@ local function ToggleFade(visible)
 end
 
 local InputData = {Key = nil, Active = false, Timer = 0, CurrentDelay = 0.2}
-
 local function ExecuteInput(key)
     if not ScreenGui or not ScreenGui.Parent then return end
     if State.IsAnimating then return end
@@ -1095,6 +1219,10 @@ local function ExecuteInput(key)
                 if item.Type == "ColorOption" and item.Parent then
                     item.Parent[item.Name] = item.Value
                 end
+                -- Handle Pine Tree Distance slider specifically
+                if item.Parent and item.Parent.Name == "Pine Tree Distance" and item.Parent.Type == "Slider" then
+                     _G.BugFarmAPI.SetConfig({PineTreeApproachDistance = item.Value})
+                 end
                 if State.AutoSave and oldVal ~= item.Value then
                     task.delay(0.5, function()
                         if State.LastConfig ~= "" then
@@ -1106,10 +1234,14 @@ local function ExecuteInput(key)
             elseif key == Enum.KeyCode.Left then
                 local oldVal = item.Value or 0
                 item.Value = (item.Value or 0) - 1
-                if item.Value < 0 then item.Value = 0 end
+                if item.Value < (item.Min or 0) then item.Value = item.Min or 0 end -- Use Min if defined
                 if item.Type == "ColorOption" and item.Parent then
                     item.Parent[item.Name] = item.Value
                 end
+                -- Handle Pine Tree Distance slider specifically
+                if item.Parent and item.Parent.Name == "Pine Tree Distance" and item.Parent.Type == "Slider" then
+                     _G.BugFarmAPI.SetConfig({PineTreeApproachDistance = item.Value})
+                 end
                 if State.AutoSave and oldVal ~= item.Value then
                     task.delay(0.5, function()
                         if State.LastConfig ~= "" then
@@ -1211,6 +1343,16 @@ local function TriggerSingleAction(key)
                         item.State = oldState
                     end
                 end
+                -- Special handling for "Paused" button callback
+                if item.Name == "Paused" and item.Type == "Button" then
+                     if item.State then
+                         _G.BugFarmAPI.Pause() -- Use API to pause if menu says paused
+                         ShowNotification("Bug Farm: Paused", 1.5)
+                     else
+                         _G.BugFarmAPI.Resume() -- Use API to resume if menu says resumed
+                         ShowNotification("Bug Farm: Resumed", 1.5)
+                     end
+                 end
                 if State.AutoSave and State.LastConfig ~= "" then
                     task.delay(0.3, function() SaveConfig(State.LastConfig) end)
                 end
@@ -1366,9 +1508,26 @@ local function TriggerSingleAction(key)
                 elseif item.Action == "ForceStartBugFarm" then
                     _G.BugFarmAPI.ForceStart() -- Use API to force start
                     ShowNotification("Bug Farm Force Started", 2)
+                    -- Update the "Enabled" button state in the menu
+                    for _, item in ipairs(MenuData[1].Items) do
+                        if item.Name == "Enabled" and item.Type == "Button" then
+                            item.State = true
+                            break
+                        end
+                    end
+                    UpdateVisuals()
                 elseif item.Action == "StopBugFarm" then
                     _G.BugFarmAPI.Stop() -- Use API to stop
                     ShowNotification("Bug Farm Stopped", 2)
+                    -- Update the "Enabled" and "Paused" button states in the menu
+                    for _, item in ipairs(MenuData[1].Items) do
+                        if item.Name == "Enabled" and item.Type == "Button" then
+                            item.State = false
+                        elseif item.Name == "Paused" and item.Type == "Button" then
+                            item.State = false
+                        end
+                    end
+                    UpdateVisuals()
                 end
             elseif item.Type == "File" then
                 LoadConfig(item.Name or "")
@@ -1586,7 +1745,6 @@ table.insert(Connections, UIS_Ended)
 --// INITIALIZE //--
 -- Wait for API to be available
 repeat task.wait() until _G.BugFarmAPI
-
 RefreshList()
 SetControls(true)
 UpdateVisuals()
@@ -1598,5 +1756,5 @@ task.delay(0.5, function()
     end
 end)
 
-ShowNotification("BBSR v9.0 Bug Farm Menu loaded | Right Ctrl to toggle", 3)
+ShowNotification("BBSR v9.0 Bug Farm Menu loaded | Right Ctrl to toggle | F1: Start/Resume, F2: Pause/Resume, F3: Stop", 3)
 print("[BugFarmMenu] Loaded. Waiting for API...")

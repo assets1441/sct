@@ -21,7 +21,8 @@ local BugFarm = {
     CooldownMultiplier = 1.0,
     AutoLoot = true,
     CheckInterval = 5,
-    ShowNotifications = true
+    ShowNotifications = true,
+    PineTreeApproachDistance = 20 
 }
 
 local FieldsData = {}
@@ -219,6 +220,7 @@ local function HandleCombat(currentFieldName)
         end
         if anyMobAlive then
             targetFound = true
+            -- ИЗМЕНЕНАЯ ЛОГИКА ДЛЯ Pine Tree Forest
             if currentFieldName == "Pine Tree Forest" then
                 local closestMob = nil
                 local minDst = 9999
@@ -230,8 +232,37 @@ local function HandleCombat(currentFieldName)
                     end
                 end
                 if closestMob then
-                    hum:MoveTo(closestMob.Head.Position)
+                    local mobPos = closestMob.Head.Position
+                    local playerPos = root.Position
+                    local directionToMob = (mobPos - playerPos).Unit -- Направление к мобу
+                    -- Вычисляем точку на нужном расстоянии от моба (но не за ним)
+                    -- Формула: позиция_моба - направление_к_мобу * расстояние
+                    local desiredDistance = BugFarm.PineTreeApproachDistance -- Используем настройку
+                    local approachPoint = mobPos - directionToMob * desiredDistance
+
+                    -- Двигаемся к рассчитанной точке
+                    hum:MoveTo(approachPoint)
+
+                    -- Ждём немного или пока не будет рядом с точкой
+                    local approachStartTime = tick()
+                    while (root.Position - approachPoint).Magnitude > 5 and (tick() - approachStartTime) < 1.5 and BugFarm.Running do
+                        task.wait(0.1)
+                    end
+
+                    -- Теперь отбегаем от моба
+                    -- Вычисляем точку "за" игроком, противоположно мобу
+                    local retreatPoint = playerPos - directionToMob * 10 -- Отбегаем на 10 стадий назад
+                    hum:MoveTo(retreatPoint)
+
+                    -- Ждём немного или пока не будет рядом с точкой отступления
+                    local retreatStartTime = tick()
+                    while (root.Position - retreatPoint).Magnitude > 3 and (tick() - retreatStartTime) < 1 and BugFarm.Running do
+                        task.wait(0.1)
+                    end
                 end
+            else
+                -- Стандартное поведение для других полей (если нужно)
+                -- (Оставьте пустым, если не нужно ничего делать)
             end
         else
             if targetFound then

@@ -314,16 +314,10 @@ local MenuData = {
                 _G.BugFarmAPI.SetConfig({Enabled = state})
                 ShowNotification("Enabled set to: " .. (state and "ON" or "OFF"), 1.5)
             end},
-            -- NEW: Pause Button (for display only, controlled by F2)
-            {Type = "Button", Name = "Paused", State = false, Callback = function(state)
-                 -- This button now reflects the API state, controlled by F2
-                 -- Do nothing on click, just show status
-                 ShowNotification("Use F2 to Pause/Resume", 1.5)
-             end},
-             -- NEW: Pine Tree Distance Slider
-             {Type = "Slider", Name = "Pine Tree Distance", Value = 20, Max = 50, Min = 5, Callback = function(value)
-                 _G.BugFarmAPI.SetConfig({PineTreeApproachDistance = value}) -- Use API to update
-             end},
+            -- NEW: Pine Tree Distance Slider
+            {Type = "Slider", Name = "Pine Tree Distance", Value = 20, Max = 50, Min = 5, Callback = function(value)
+                _G.BugFarmAPI.SetConfig({PineTreeApproachDistance = value}) -- Use API to update
+            end},
             {Type = "Slider", Name = "Scan Radius", Value = 80, Max = 200, Callback = function(value)
                 _G.BugFarmAPI.SetConfig({MobScanRadius = value}) -- Use API to update
             end},
@@ -345,14 +339,7 @@ local MenuData = {
             {Type = "Button", Name = "Jump Dodge", State = true, Callback = function(state)
                 _G.BugFarmAPI.SetConfig({JumpDodgeEnabled = state}) -- Use API to update
             end},
-            -- Убрана кнопка Notifications
-            -- {Type = "Button", Name = "Notifications", State = true, Callback = function(state)
-            --     _G.BugFarmAPI.SetConfig({ShowNotifications = state}) -- Use API to update
-            -- end},
             {Type = "Action", Name = "Edit Blacklist", Action = "EditBlacklist"},
-            -- Убраны кнопки Force Start и Stop Farm
-            -- {Type = "Action", Name = "Force Start", Action = "ForceStartBugFarm"},
-            -- {Type = "Action", Name = "Stop Farm", Action = "StopBugFarm"}
         }
     },
     {
@@ -505,17 +492,6 @@ local function LoadConfig(name)
         -- Update the blacklist box text if core was loaded
         if BlacklistBox then
             BlacklistBox.Text = table.concat(_G.BugFarmAPI.Blacklist, "\n")
-        end
-        -- Update Pause button state based on loaded config
-        local pauseItem = nil
-        for _, item in ipairs(MenuData[1].Items) do
-            if item.Name == "Paused" and item.Type == "Button" then
-                pauseItem = item
-                break
-            end
-        end
-        if pauseItem then
-            pauseItem.State = data.BugFarm.Paused or false
         end
         -- Update Pine Tree Distance slider state based on loaded config
         local distanceItem = nil
@@ -778,19 +754,7 @@ local function UpdateVisuals()
         elseif item.Type == "File" then
             text = "FILE: " .. (item.Name or "")
         elseif item.Type == "Button" then
-            -- Special handling for "Paused" button to reflect actual API state
-            if item.Name == "Paused" and item.Type == "Button" then
-                local apiState = _G.BugFarmAPI.GetConfig().Paused
-                item.State = apiState -- Sync item state with API
-                text = (apiState and "[PAUSED] " or "[RUNNING] ") .. (item.Name or "")
-            elseif item.Name == "Enabled" and item.Type == "Button" then
-                -- Show state based on API
-                local apiState = _G.BugFarmAPI.GetConfig().Enabled
-                item.State = apiState
-                text = (apiState and "[x] " or "[ ] ") .. (item.Name or "")
-            else
-                text = (item.State and "[x] " or "[ ] ") .. (item.Name or "")
-            end
+            text = (item.State and "[x] " or "[ ] ") .. (item.Name or "")
         elseif item.Type == "Action" then
             text = "[RUN] " .. (item.Name or "")
         elseif item.Type == "ColorPicker" then
@@ -1064,25 +1028,9 @@ local function OnF1Activated(actionName, inputState, inputObject)
         if currentConfig.Running and currentConfig.Paused then
             _G.BugFarmAPI.Resume() -- F1 resumes if paused
             ShowNotification("Bug Farm: Resumed via F1", 1.5)
-            -- Update the "Paused" button state in the menu
-            for _, item in ipairs(MenuData[1].Items) do
-                if item.Name == "Paused" and item.Type == "Button" then
-                    item.State = false
-                    break
-                end
-            end
-            UpdateVisuals()
         elseif not currentConfig.Running and currentConfig.Enabled then
             _G.BugFarmAPI.ForceStart() -- F1 starts if not running but enabled
             ShowNotification("Bug Farm: Started via F1", 1.5)
-            -- Update the "Paused" button state in the menu (should be false at start)
-            for _, item in ipairs(MenuData[1].Items) do
-                if item.Name == "Paused" and item.Type == "Button" then
-                    item.State = false
-                    break
-                end
-            end
-            UpdateVisuals()
         else
             -- If not running and not enabled, F1 does nothing specific
             ShowNotification("Bug Farm: Not enabled or already running", 1.5)
@@ -1096,29 +1044,14 @@ local function OnF2Activated(actionName, inputState, inputObject)
         if currentConfig.Running and not currentConfig.Paused then
             _G.BugFarmAPI.Pause() -- F2 pauses if running and not paused
             ShowNotification("Bug Farm: Paused via F2", 1.5)
-            -- Update the "Paused" button state in the menu
-            for _, item in ipairs(MenuData[1].Items) do
-                if item.Name == "Paused" and item.Type == "Button" then
-                    item.State = true
-                    break
-                end
-            end
         elseif currentConfig.Running and currentConfig.Paused then
             _G.BugFarmAPI.Resume() -- F2 resumes if paused
             ShowNotification("Bug Farm: Resumed via F2", 1.5)
-            -- Update the "Paused" button state in the menu
-            for _, item in ipairs(MenuData[1].Items) do
-                if item.Name == "Paused" and item.Type == "Button" then
-                    item.State = false
-                    break
-                end
-            end
         else
             -- If not running, F2 does nothing specific, but could be used to start if desired
             -- For consistency with your request, let's just notify if not running.
             ShowNotification("Bug Farm: Not running", 1.5)
         end
-        UpdateVisuals()
     end
 end
 
@@ -1126,15 +1059,6 @@ local function OnF3Activated(actionName, inputState, inputObject)
     if inputState == Enum.UserInputState.Begin then
         _G.BugFarmAPI.Stop() -- F3 forces stop
         ShowNotification("Bug Farm: Stopped via F3", 1.5)
-        -- Update the "Enabled" and "Paused" button states in the menu
-        for _, item in ipairs(MenuData[1].Items) do
-            if item.Name == "Enabled" and item.Type == "Button" then
-                item.State = false
-            elseif item.Name == "Paused" and item.Type == "Button" then
-                item.State = false
-            end
-        end
-        UpdateVisuals()
     end
 end
 
@@ -1313,15 +1237,8 @@ local function TriggerSingleAction(key)
                         item.State = oldState
                     end
                 end
-                -- Special handling for "Paused" button callback - now just shows notification
-                if item.Name == "Paused" and item.Type == "Button" then
-                     ShowNotification("Use F2 to control pause/resume", 1.5)
-                     -- Sync state back from API to ensure consistency
-                     local apiState = _G.BugFarmAPI.GetConfig().Paused
-                     item.State = apiState
-                 end
-                 -- Special handling for "Enabled" button callback - just updates API
-                 if item.Name == "Enabled" and item.Type == "Button" then
+                -- Special handling for "Enabled" button callback - just updates API
+                if item.Name == "Enabled" and item.Type == "Button" then
                      _G.BugFarmAPI.SetConfig({Enabled = item.State})
                  end
                 if State.AutoSave and State.LastConfig ~= "" then
@@ -1476,30 +1393,6 @@ local function TriggerSingleAction(key)
                     BlacklistFrame.Visible = true
                     BlacklistBox:CaptureFocus()
                     BlacklistBox.Text = table.concat(_G.BugFarmAPI.Blacklist, "\n") -- Use API's blacklist
-                -- Убраны кнопки Force Start и Stop Farm
-                -- elseif item.Action == "ForceStartBugFarm" then
-                --     _G.BugFarmAPI.ForceStart() -- Use API to force start
-                --     ShowNotification("Bug Farm Force Started", 2)
-                --     -- Update the "Enabled" button state in the menu
-                --     for _, item in ipairs(MenuData[1].Items) do
-                --         if item.Name == "Enabled" and item.Type == "Button" then
-                --             item.State = true
-                --             break
-                --         end
-                --     end
-                --     UpdateVisuals()
-                -- elseif item.Action == "StopBugFarm" then
-                --     _G.BugFarmAPI.Stop() -- Use API to stop
-                --     ShowNotification("Bug Farm Stopped", 2)
-                --     -- Update the "Enabled" and "Paused" button states in the menu
-                --     for _, item in ipairs(MenuData[1].Items) do
-                --         if item.Name == "Enabled" and item.Type == "Button" then
-                --             item.State = false
-                --         elseif item.Name == "Paused" and item.Type == "Button" then
-                --             item.State = false
-                --         end
-                --     end
-                --     UpdateVisuals()
                 end
             elseif item.Type == "File" then
                 LoadConfig(item.Name or "")

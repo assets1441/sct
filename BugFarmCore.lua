@@ -9,6 +9,7 @@ local HttpService = game:GetService("HttpService") -- Для JSON
 local BugFarm = {
     Enabled = false,
     Running = false,
+    Paused = false, -- НОВОЕ: Переменная для состояния паузы
     Blacklist = {
         "coconutcrab", "commandochick", "kingbeetle", "stumpsnail",
         "tunnelbear", "cavemonster", "aphid", "vicious", "mondochick", "cavemonster1"
@@ -22,7 +23,7 @@ local BugFarm = {
     AutoLoot = true,
     CheckInterval = 5,
     ShowNotifications = true,
-    PineTreeApproachDistance = 20 
+    PineTreeApproachDistance = 20 -- Используется для слайдера
 }
 
 local FieldsData = {}
@@ -198,7 +199,7 @@ local function HandleCombat(currentFieldName)
     local startTime = tick()
     local targetFound = false
     local maxWaitTime = 2
-    while BugFarm.Running do
+    while BugFarm.Running and not BugFarm.Paused do -- ИЗМЕНЕНО: Проверка Paused внутри цикла боя
         -- Read setting directly when entering combat check
         local scanRadius = BugFarm.MobScanRadius
         local jumpDodgeEnabled = BugFarm.JumpDodgeEnabled
@@ -245,7 +246,7 @@ local function HandleCombat(currentFieldName)
 
                     -- Ждём немного или пока не будет рядом с точкой
                     local approachStartTime = tick()
-                    while (root.Position - approachPoint).Magnitude > 5 and (tick() - approachStartTime) < 1.5 and BugFarm.Running do
+                    while (root.Position - approachPoint).Magnitude > 5 and (tick() - approachStartTime) < 1.5 and BugFarm.Running and not BugFarm.Paused do -- ИЗМЕНЕНО: Проверка Paused
                         task.wait(0.1)
                     end
 
@@ -256,7 +257,7 @@ local function HandleCombat(currentFieldName)
 
                     -- Ждём немного или пока не будет рядом с точкой отступления
                     local retreatStartTime = tick()
-                    while (root.Position - retreatPoint).Magnitude > 3 and (tick() - retreatStartTime) < 1 and BugFarm.Running do
+                    while (root.Position - retreatPoint).Magnitude > 3 and (tick() - retreatStartTime) < 1 and BugFarm.Running and not BugFarm.Paused do -- ИЗМЕНЕНО: Проверка Paused
                         task.wait(0.1)
                     end
                 end
@@ -323,7 +324,7 @@ local function CollectLoot(fieldName)
             end
         end
     end
-    while #validTokens > 0 and BugFarm.Running do
+    while #validTokens > 0 and BugFarm.Running and not BugFarm.Paused do -- ИЗМЕНЕНО: Проверка Paused
         table.sort(validTokens, function(a, b)
             if not a.Parent or not b.Parent then return false end
             local distA = (a.Position - root.Position).Magnitude
@@ -336,7 +337,7 @@ local function CollectLoot(fieldName)
             hum:MoveTo(targetToken.Position)
             local moveStartTime = tick()
             local collected = false
-            while not collected and tick() - moveStartTime < 2 and BugFarm.Running do
+            while not collected and tick() - moveStartTime < 2 and BugFarm.Running and not BugFarm.Paused do -- ИЗМЕНЕНО: Проверка Paused
                 if not targetToken.Parent then
                     collected = true
                     break
@@ -363,9 +364,10 @@ end
 local function BugFarmMainLoop()
     if BugFarm.Running then return end
     BugFarm.Running = true
+    BugFarm.Paused = false -- Убедиться, что сброшено при старте
     CalculateFields()
     -- ShowNotification("Bug Farm Started", 2) -- Notification logic moved to menu
-    while BugFarm.Running and BugFarm.Enabled do
+    while BugFarm.Running and BugFarm.Enabled and not BugFarm.Paused do -- ИЗМЕНЕНО: Добавлена проверка Paused в основной цикл
         pcall(function()
             CheckAndConvertPollen()
             local farmedSomething = false
@@ -412,8 +414,18 @@ local function BugFarmMainLoop()
         end)
         task.wait(0.5)
     end
-    BugFarm.Running = false
-    -- ShowNotification("Bug Farm Stopped", 2) -- Notification logic moved to menu
+    -- Цикл завершится по одной из причин:
+    -- 1. BugFarm.Enabled = false (Stop)
+    -- 2. BugFarm.Paused = true (Pause)
+    -- 3. BugFarm.Running = false (ошибка или другое)
+    -- Если цикл завершился НЕ из-за паузы, значит остановлен окончательно.
+    if not BugFarm.Paused then
+        BugFarm.Running = false
+        BugFarm.Enabled = false -- Также сбрасываем Enabled при полной остановке
+        -- ShowNotification("Bug Farm Stopped", 2) -- Notification logic moved to menu
+    else
+        -- ShowNotification("Bug Farm Paused", 2) -- Можно добавить уведомление о паузе
+    end
 end
 
 function StartBugFarm()
@@ -422,20 +434,39 @@ function StartBugFarm()
     coroutine.resume(BugFarmThread)
 end
 
-function StopBugFarm()
+function StopBugFarm() -- Переименовал в ForceStop для ясности
+    BugFarm.Paused = false -- Снимаем паузу при остановке
     BugFarm.Running = false
     BugFarm.Enabled = false
+    -- ShowNotification("Bug Farm Force Stopped", 2) -- Notification logic moved to menu
+end
+
+function PauseBugFarm() -- НОВАЯ функция
+    if BugFarm.Running and not BugFarm.Paused then
+        BugFarm.Paused = true
+        -- ShowNotification("Bug Farm Paused", 2) -- Notification logic moved to menu
+    end
+end
+
+function ResumeBugFarm() -- НОВАЯ функция
+    if BugFarm.Running and BugFarm.Paused then
+        BugFarm.Paused = false
+        -- ShowNotification("Bug Farm Resumed", 2) -- Notification logic moved to menu
+    end
 end
 
 function ForceStartBugFarm()
     BugFarm.Enabled = true
+    BugFarm.Paused = false -- Убедиться, что не на паузе
     StartBugFarm()
 end
 
 --// API CREATION //--
 _G.BugFarmAPI = {
     Start = StartBugFarm,
-    Stop = StopBugFarm,
+    Stop = StopBugFarm, -- Теперь это ForceStop
+    Pause = PauseBugFarm, -- НОВОЕ
+    Resume = ResumeBugFarm, -- НОВОЕ
     ForceStart = ForceStartBugFarm,
     -- For updating settings from menu
     SetConfig = function(newSettings)

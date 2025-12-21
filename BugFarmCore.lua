@@ -364,14 +364,14 @@ end
 local function BugFarmMainLoop()
     if BugFarm.Running then return end
     BugFarm.Running = true
-    BugFarm.Paused = false -- Убедиться, что сброшено при старте
+    BugFarm.Paused = false
     CalculateFields()
-    -- ShowNotification("Bug Farm Started", 2) -- Notification logic moved to menu
-    while BugFarm.Running and BugFarm.Enabled and not BugFarm.Paused do -- ИЗМЕНЕНО: Добавлена проверка Paused в основной цикл
+    while BugFarm.Running and BugFarm.Enabled and not BugFarm.Paused do
         pcall(function()
             CheckAndConvertPollen()
             local farmedSomething = false
             for _, group in pairs(SpawnerGroups) do
+                if not BugFarm.Running or BugFarm.Paused then break end
                 local readySpawners = 0
                 local spawnersInGroup = {}
                 for _, spawnerName in pairs(group.spawners) do
@@ -384,91 +384,75 @@ local function BugFarmMainLoop()
                     local fieldName = group.field
                     local fieldData = FieldsData[fieldName]
                     if fieldData then
-                        -- ShowNotification("Farming: " .. fieldName, 2) -- Notification logic moved to menu
                         TeleportTo(fieldData.Center)
                         farmedSomething = true
                         task.wait(0.5)
-                        -- HandleCombat will now read current settings
                         local killedMobs = HandleCombat(fieldName)
                         if killedMobs then
-                            for _, sName in pairs(spawnersInGroup) do
-                                -- SetManualCooldown will now use current multiplier
-                                SetManualCooldown(sName, 45)
-                            end
-                            -- CollectLoot will now read current settings
+                            for _, sName in pairs(spawnersInGroup) do SetManualCooldown(sName, 45) end
                             CollectLoot(fieldName)
                             task.wait(1)
                         else
-                            for _, sName in pairs(spawnersInGroup) do
-                                SetManualCooldown(sName, 10)
-                            end
+                            for _, sName in pairs(spawnersInGroup) do SetManualCooldown(sName, 10) end
                         end
                     end
                 end
             end
             if not farmedSomething then
-                -- Read CheckInterval setting here before waiting
-                local checkInterval = BugFarm.CheckInterval
-                task.wait(checkInterval)
+                task.wait(BugFarm.CheckInterval)
             end
         end)
         task.wait(0.5)
     end
-    -- Цикл завершится по одной из причин:
-    -- 1. BugFarm.Enabled = false (Stop)
-    -- 2. BugFarm.Paused = true (Pause)
-    -- 3. BugFarm.Running = false (ошибка или другое)
-    -- Если цикл завершился НЕ из-за паузы, значит остановлен окончательно.
     if not BugFarm.Paused then
         BugFarm.Running = false
-        BugFarm.Enabled = false -- Также сбрасываем Enabled при полной остановке
-        -- ShowNotification("Bug Farm Stopped", 2) -- Notification logic moved to menu
-    else
-        -- ShowNotification("Bug Farm Paused", 2) -- Можно добавить уведомление о паузе
+        BugFarm.Enabled = false
     end
 end
 
-function StartBugFarm() -- Вспомогательная функция, не используется напрямую через F1
+local function StartBugFarm()
     if BugFarm.Running then return end
     BugFarmThread = coroutine.create(BugFarmMainLoop)
     coroutine.resume(BugFarmThread)
 end
 
-function StopBugFarm() -- ForceStop
-    BugFarm.Paused = false -- Снимаем паузу при остановке
+local function StopBugFarm()
+    BugFarm.Paused = false
     BugFarm.Running = false
     BugFarm.Enabled = false
-    -- ShowNotification("Bug Farm Force Stopped", 2) -- Notification logic moved to menu
 end
 
-function PauseBugFarm()
+local function PauseBugFarm()
     if BugFarm.Running and not BugFarm.Paused then
         BugFarm.Paused = true
-        -- ShowNotification("Bug Farm Paused", 2) -- Notification logic moved to menu
     end
 end
 
-function ResumeBugFarm()
+local function ResumeBugFarm()
     if BugFarm.Running and BugFarm.Paused then
         BugFarm.Paused = false
-        -- ShowNotification("Bug Farm Resumed", 2) -- Notification logic moved to menu
+        -- Так как цикл мог остановиться, перезапускаем его
+        if coroutine.status(BugFarmThread) == "dead" then
+            StartBugFarm()
+        end
     end
 end
 
-function ForceStartBugFarm() -- F1 запускает через эту функцию, если Enabled = true
+local function ForceStartBugFarm()
     if BugFarm.Enabled and not BugFarm.Running then
         StartBugFarm()
     end
 end
 
+
 --// API CREATION //--
+-- Создаем ЛОКАЛЬНУЮ таблицу API
 local BugFarmAPI = {
     Start = StartBugFarm,
     Stop = StopBugFarm,
     Pause = PauseBugFarm,
     Resume = ResumeBugFarm,
     ForceStart = ForceStartBugFarm,
-    -- For updating settings from menu
     SetConfig = function(newSettings)
         for key, value in pairs(newSettings) do
             if BugFarm[key] ~= nil then
@@ -476,20 +460,17 @@ local BugFarmAPI = {
             end
         end
     end,
-    -- For getting current settings
     GetConfig = function() return BugFarm end,
-    -- Expose Blacklist for direct manipulation if needed by menu
     Blacklist = BugFarm.Blacklist,
-    -- Expose FieldsData if menu needs it
     FieldsData = FieldsData,
-    -- Expose other potentially useful functions/vars
     CalculateFields = CalculateFields,
     IsSpawnerReady = IsSpawnerReady,
-    -- Add any other functions you might want the menu to call directly
 }
 
--- Store the API in _G
-_G.BugFarmAPI = BugFarmAPI
+print("[BugFarmCore] Модуль загружен. Возвращаем готовую таблицу API.")
+
+-- КЛЮЧЕВОЕ ИЗМЕНЕНИЕ: Возвращаем полностью готовую таблицу API.
+return BugFarmAPI
 
 -- Also set up a backup mechanism to restore the API if it gets lost
 spawn(function()
